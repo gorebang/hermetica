@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./hermetica_icon.png" width="320" alt="Hermetica Logo">
+</p>
+
 # Hermetica
 
 > *“That which is hidden from the many will be revealed to the few.”*  
@@ -150,6 +154,80 @@ flowchart LR
 ```
 
 ---
+
+## Flow Execution & Retry Logic
+
+Hermetica supports per-step **retries**, **timeouts**, and **error policies**.
+
+When a step returns `{:error, reason}`, the runner will:
+1. **Log** the failure with the step name and error.
+2. **Retry** up to `retries:` times (per step).
+3. **Back off exponentially** between retries: `200ms * 2^attempt` (capped at **2000ms**).
+4. Optionally **compensate** using `on_error: {:compensate, &Module.fun/1}` to provide fallback output.
+
+> **Requires DSL with `step/3`.** If your `Hermetica.DSL` doesn’t have it, add it (see snippet below).
+
+---
+
+### Example: Retry & Halt on Error
+
+```elixir
+defmodule Hermetica.Flows.RetryDemo do
+  import Hermetica.DSL
+
+  defflow "retry_demo" do
+    step :sometimes_flaky, [retries: 3, timeout: 1_000, on_error: :halt], fn _ctx ->
+      if :rand.uniform() < 0.7, do: {:error, :flaky}, else: {:ok, %{ok: true}}
+    end
+  end
+end
+```
+
+### Example: Compensation (Fallback) on Error
+
+```elixir
+defmodule Hermetica.Flows.CompDemo do
+  import Hermetica.DSL
+
+  defflow "comp_demo" do
+    step :write_to_cache,
+      [retries: 2, timeout: 1_000, on_error: {:compensate, &__MODULE__.fallback/1}],
+      fn _ctx ->
+        {:error, :upstream_down}
+      end
+  end
+
+  # Named compensator is safer than an inline anonymous fn in options
+  def fallback(_ctx), do: {:ok, %{cached: false}}
+end
+```
+
+#### Error policy quick ref
+
+- on_error: :halt → stop the flow and return {:error, reason}
+
+- on_error: :continue → skip this step’s output, continue
+
+- on_error: {:compensate, &fun/1} → call fun.(ctx); if it returns {:ok, out}, record it as the step’s output
+
+### Running a Flow
+```elixir
+# Synchronous result (includes final context)
+Hermetica.FlowServer.trigger_sync(Hermetica.Flows.RetryDemo, %{})
+
+```
+On success you’ll get:
+```elixir
+{:ok,
+  %{
+    run_id: "uuid-v4-here",
+    event: %{},
+    out: %{
+      sometimes_flaky: %{ok: true}
+    }
+  }
+}
+```
 
 ## License
 
