@@ -15,7 +15,7 @@ defmodule Hermetica.MixProject do
   def application do
     [
       mod: {Hermetica.Application, []},
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
