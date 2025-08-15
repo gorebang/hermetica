@@ -1,8 +1,14 @@
 # Hermetica
 
+> *“That which is hidden from the many will be revealed to the few.”*  
+> *"Quod occultum est a multis, paucis revelabitur."*  
+> — *Corpus Hermeticum*
+
 **Elixir/OTP-Powered Orchestration Layer for LLM Agents**
 
-Hermetica is a **protocol-first, deterministic, and auditable agent orchestration system** designed for organizations that have outgrown the operational complexity of LangChain. It preserves your existing Python-based LangChain tools while replacing its brittle chain/agent runtime with a robust Elixir/OTP core.
+Hermetica is a **protocol-first, deterministic, and auditable agent orchestration system** designed for organizations that have outgrown the operational complexity of LangChain. 
+
+It preserves your existing Python-based LangChain tools while replacing its brittle chain/agent runtime with a robust Elixir/OTP core.
 
 ---
 
