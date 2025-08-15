@@ -2,11 +2,11 @@
   <img src="./hermetica_icon.png" width="320" alt="Hermetica Logo">
 </p>
 
-# Hermetica
-
 > *“That which is hidden from the many will be revealed to the few.”*  
 > *"Quod occultum est a multis, paucis revelabitur."*  
 > — *Corpus Hermeticum*
+
+# Hermetica
 
 **Elixir/OTP-Powered Orchestration Layer for LLM Agents**
 
