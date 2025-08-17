@@ -114,7 +114,7 @@ Where `langchain_adapter` is an MCP bridge that:
 
 ---
 
-## Quick Start
+## Setup
 
 ```bash
 # Clone
@@ -135,6 +135,101 @@ Where `langchain_adapter` is an MCP bridge that:
 ```
 
 ---
+
+## Database
+Hermetica uses PostgreSQL via Ecto for persistence.
+
+1. Create and migrate the database:
+```bash
+MIX_ENV=dev mix ecto.create -r Store.Repo
+MIX_ENV=dev mix ecto.migrate -r Store.Repo
+```
+2. Verify your Postgres connection in apps/store/config/dev.exs (defaults to localhost, database hermetica_dev, user postgres).
+
+##  Running Postgres with Docker
+
+Hermetica persists runs/steps to Postgres. If you don’t have Postgres locally, you can spin it up with Docker.
+
+### Option A: One-liner (Docker container)
+
+```bash
+docker run --name hermetica-pg \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=hermetica_dev \
+  -p 5432:5432 -d postgres:16
+```
+
+Update your repo config if needed (defaults already match the above):
+
+```elixir
+# config/dev.exs (umbrella root)
+import Config
+
+config :store, ecto_repos: [Store.Repo]
+
+config :store, Store.Repo,
+  database: "hermetica_dev",
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  pool_size: 10
+```
+Then create/migrate:
+
+```bash
+mix ecto.create -r Store.Repo
+mix ecto.migrate -r Store.Repo
+```
+To stop/remove the container later:
+```bash
+docker stop hermetica-pg && docker rm hermetica-pg
+```
+
+### Option B: docker-compose
+Add a docker-compose.yml to your repo root:
+
+```yaml
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: hermetica-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hermetica_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - hermetica_pg_data:/var/lib/postgresql/data
+volumes:
+  hermetica_pg_data:
+```
+Start it:
+```bash
+ docker compose up -d
+```
+Run DB tasks:
+```bash
+mix ecto.create -r Store.Repo
+mix ecto.migrate -r Store.Repo
+```
+To stop:
+```bash
+docker compose down
+```
+
+## Verifying the DB
+```bash
+# list databases
+docker exec -it hermetica-pg psql -U postgres -c '\l'
+
+# check your tables
+docker exec -it hermetica-pg psql -U postgres -d hermetica_dev \
+  -c 'SELECT tablename FROM pg_tables WHERE schemaname = '\''public'\'';'
+```
 
 ## Diagram: Strangler Pattern Migration
 
@@ -211,22 +306,61 @@ end
 - on_error: {:compensate, &fun/1} → call fun.(ctx); if it returns {:ok, out}, record it as the step’s output
 
 ### Running a Flow
-```elixir
-# Synchronous result (includes final context)
-Hermetica.FlowServer.trigger_sync(Hermetica.Flows.RetryDemo, %{})
+Start an interactive shell with Hermetica:
+```bash
+iex -S mix
 
 ```
-On success you’ll get:
+Trigger a flow:
 ```elixir
-{:ok,
-  %{
-    run_id: "uuid-v4-here",
-    event: %{},
-    out: %{
-      sometimes_flaky: %{ok: true}
-    }
-  }
-}
+# Synchronous result (includes final context)
+Hermetica.FlowServer.trigger_sync(Hermetica.Flows.Hello, %{who: "world"})
+```
+
+Expected output:
+```elixir
+[info] flow hello triggered with %{who: "world"}
+Hello from Hermetica
+```
+
+## Inspecting Results
+Runs and steps are stored in Postgres:
+```bash
+psql -h localhost -U postgres -d hermetica_dev \
+  -c "SELECT id, flow, status, inserted_at FROM runs ORDER BY inserted_at DESC LIMIT 5;"
+
+psql -h localhost -U postgres -d hermetica_dev \
+  -c "SELECT run_id, step, status FROM step_runs ORDER BY inserted_at DESC LIMIT 10;"
+```
+## Development Notes
+- Flows live under apps/hermetica/lib/hermetica/flows/
+- Each flow defines steps with retry/compensation metadata
+- Persistence is handled by Store.Repo
+- Logs are written with Logger
+
+## Common issues 
+- missing the :database key during ecto tasks
+Make sure you’re running the real Ecto tasks from the umbrella root:
+
+```bash
+mix ecto.create -r Store.Repo
+mix ecto.migrate -r Store.Repo
+```
+and that your repo config is in the umbrella root config/dev.exs (not only inside a child app).
+
+- Connection refused
+Ensure Postgres is running:
+```bash
+docker ps  # should show hermetica-pg
+docker logs hermetica-pg --tail=50
+```
+- Auth errors
+Ensure the username/password in config/dev.exs matches your container env vars (default postgres/postgres).
+
+```go
+
+If you want, I can also add a tiny **Makefile** (e.g., `make db-up`, `make db-down`, `make setup`) to make these commands even snappier.
+::contentReference[oaicite:0]{index=0}
 ```
 
 ## License
