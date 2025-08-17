@@ -1,6 +1,6 @@
+# config/dev.exs (umbrella root)
 import Config
 
-# Tell Ecto which repos this OTP app uses
 config :store, ecto_repos: [Store.Repo]
 
 config :store, Store.Repo,

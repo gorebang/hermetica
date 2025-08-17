@@ -39,43 +39,105 @@ defmodule Hermetica.FlowServer do
   end
 
   # --- Internals ---
-  defp do_run(%{name: name, steps: steps}, event) do
-    run_id = uuid4()
-    Logger.metadata(run_id: run_id)
-    Logger.info("flow #{name} triggered with #{inspect(event)}")
+defp do_run(%{name: name, steps: steps}, event) do
+  Logger.info("flow #{name} triggered with #{inspect(event)}")
 
-    ctx0 = %{run_id: run_id, event: event, out: %{}}
+  # 1) Create a run row first
+  masked_event = Hermetica.Mask.maybe(event)
+  {:ok, run} =
+    Store.Repo.insert(
+      Store.Run.changeset(%Store.Run{}, %{
+        flow: name,
+        status: :running,
+        event: masked_event
+      })
+    )
 
-    result =
-      Enum.reduce_while(steps, {:ok, ctx0}, fn {step_name, step_def}, {:ok, ctx} ->
-        {fun, opts} = step_fun_and_opts(step_def)
+  # Use the DB UUID for correlation
+  Logger.metadata(run_id: run.id)
 
-        case Hermetica.StepRunner.run(fun, ctx, opts) do
-          {:ok, out} ->
-            {:cont, {:ok, put_in(ctx.out[step_name], out)}}
+  ctx0 = %{run_id: run.id, event: event, out: %{}}
 
-          {:error, err} ->
-            Logger.error("step #{step_name} failed: #{inspect(err)}")
+  result =
+    Enum.reduce_while(steps, {:ok, ctx0}, fn {step_name, step_def}, {:ok, ctx} ->
+      {fun, opts} = step_fun_and_opts(step_def)
 
-            case Keyword.get(opts, :on_error, :halt) do
-              :continue ->
-                {:cont, {:ok, ctx}}
+      # (optional) record step start
+      _ = Store.Repo.insert(
+        Store.StepRun.changeset(%Store.StepRun{}, %{
+          run_id: ctx.run_id,
+          step: to_string(step_name),
+          status: :running,
+          input: Hermetica.Mask.maybe(ctx)
+        })
+      )
 
-              {:compensate, comp_fun} when is_function(comp_fun, 1) ->
-                case comp_fun.(ctx) do
-                  {:ok, comp_out} -> {:cont, {:ok, put_in(ctx.out[step_name], comp_out)}}
-                  _ -> {:cont, {:ok, ctx}}
-                end
+      case Hermetica.StepRunner.run(fun, ctx, opts) do
+        {:ok, out} ->
+          _ = Store.Repo.insert(
+            Store.StepRun.changeset(%Store.StepRun{}, %{
+              run_id: ctx.run_id,
+              step: to_string(step_name),
+              status: :succeeded,
+              output: Hermetica.Mask.maybe(out)
+            })
+          )
 
-              _ ->
-                {:halt, {:error, err}}
-            end
-        end
-      end)
+          {:cont, {:ok, put_in(ctx.out[step_name], out)}}
 
-    Logger.info("run finished: #{inspect(result)}")
-    result
+        {:error, err} ->
+          _ = Store.Repo.insert(
+            Store.StepRun.changeset(%Store.StepRun{}, %{
+              run_id: ctx.run_id,
+              step: to_string(step_name),
+              status: :failed,
+              error: %{"error" => inspect(err)}
+            })
+          )
+
+          case Keyword.get(opts, :on_error, :halt) do
+            :continue ->
+              {:cont, {:ok, ctx}}
+
+            {:compensate, comp_fun} when is_function(comp_fun, 1) ->
+              case comp_fun.(ctx) do
+                {:ok, comp_out} ->
+                  _ = Store.Repo.insert(
+                    Store.StepRun.changeset(%Store.StepRun{}, %{
+                      run_id: ctx.run_id,
+                      step: to_string(step_name),
+                      status: :succeeded,
+                      output: Hermetica.Mask.maybe(comp_out)
+                    })
+                  )
+
+                  {:cont, {:ok, put_in(ctx.out[step_name], comp_out)}}
+
+                _ ->
+                  {:cont, {:ok, ctx}}
+              end
+
+            _ ->
+              {:halt, {:error, err}}
+          end
+      end
+    end)
+
+  # 3) finalize run row
+  case result do
+    {:ok, ctx} ->
+      _ = Store.Repo.update(
+        Store.Run.changeset(run, %{status: :succeeded, out: Hermetica.Mask.maybe(ctx.out)})
+      )
+
+    {:error, _err} ->
+      _ = Store.Repo.update(Store.Run.changeset(run, %{status: :failed}))
   end
+
+  Logger.info("run finished: #{inspect(result)}")
+  result
+end
+
 
   defp step_fun_and_opts({:fun, fun}) when is_function(fun, 1), do: {fun, []}
   defp step_fun_and_opts({:fun, fun, opts}) when is_function(fun, 1) and is_list(opts), do: {fun, opts}

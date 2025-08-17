@@ -1,11 +1,11 @@
+# config/test.exs
 import Config
 
-# Tell Ecto which repos this OTP app uses
 config :store, ecto_repos: [Store.Repo]
 
 config :store, Store.Repo,
-  database: "hermetica_dev",
+  database: "hermetica_test",
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
-  pool_size: 10
+  pool: Ecto.Adapters.SQL.Sandbox
