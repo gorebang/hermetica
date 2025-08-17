@@ -1,8 +1,9 @@
-# apps/hermetica/test/flow_server_test.exs
 defmodule Hermetica.FlowServerTest do
   use ExUnit.Case, async: false
 
   alias Hermetica.FlowServer
+  alias Ecto.Adapters.SQL.Sandbox
+  alias Store.Repo
 
   #
   # Test-only flow modules that implement __flow__/0
@@ -67,11 +68,19 @@ defmodule Hermetica.FlowServerTest do
     def ok(%{run_id: run_id}) when is_binary(run_id), do: {:ok, %{seen: run_id}}
   end
 
+  #
+  # SQL Sandbox: checkout and switch to shared mode so spawned processes
+  # (Registry, FlowServers) can use the same DB connection.
+  #
   setup do
-    # Ensure the Registry exists before starting FlowServers
+    :ok = Sandbox.checkout(Repo)
+    Sandbox.mode(Repo, {:shared, self()})
+
+    # Ensure the Registry exists AFTER sandbox is shared
     unless Process.whereis(Hermetica.Registry) do
       start_supervised!({Registry, keys: :unique, name: Hermetica.Registry})
     end
+
     :ok
   end
 

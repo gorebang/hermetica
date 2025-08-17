@@ -9,3 +9,5 @@ config :store, Store.Repo,
   password: "postgres",
   hostname: "localhost",
   pool_size: 10
+
+  import_config "#{config_env()}.exs"
