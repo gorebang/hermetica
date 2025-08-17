@@ -363,6 +363,64 @@ If you want, I can also add a tiny **Makefile** (e.g., `make db-up`, `make db-do
 ::contentReference[oaicite:0]{index=0}
 ```
 
+## Testing
+
+This project uses ExUnit, the built-in Elixir test framework.
+
+### Running Tests
+
+Run the whole suite with:
+
+```bash
+mix test
+```
+By default, this will compile the app in the test environment, start ExUnit, and run all tests under the test/ directory.
+
+### Structure of Tests
+
+- Unit tests
+Small, isolated checks that run quickly and don’t touch external systems. They verify individual functions or modules.
+
+- Integration tests
+Cover workflows that span multiple modules or external systems (like the database). These may use fixtures, the SQL Sandbox, or supervised processes.
+
+- Support code
+You can put helpers, factories, or common test flows under test/support/ and they’ll be available to all tests.
+
+### Database Tests
+
+Since this project uses Ecto, database-backed tests use the SQL Sandbox. In config/test.exs, the Repo pool is configured as:
+
+```elixir
+config :my_app, MyApp.Repo,
+  pool: Ecto.Adapters.SQL.Sandbox
+```
+Each test checks out a sandboxed connection. For processes you supervise during tests, we switch to {:shared, self()} mode so they can all use the same connection safely.
+
+### Example Commands
+- Run a single test file:
+```bash
+  mix test test/my_app/some_test.exs
+```
+
+- Run just one test inside a file (by passing line number):
+```bash
+  mix test test/my_app/some_test.exs:42
+```
+
+### Tips for Contributors
+- Keep fast unit tests plentiful; they give the quickest feedback.
+- Use integration tests to validate end-to-end correctness (flows, persistence, external effects).
+- Add new flows/helpers under test/support/ if multiple tests need them.
+- If you see sandbox errors, double-check your config/test.exs and that you’re checking out a connection in setup.
+
+### Philosophy
+- Keep it fast: favor unit tests where possible. They should run in milliseconds and never depend on the database unless necessary.
+- Test contracts, not internals: assert on public outputs and behaviors, not implementation details. This makes refactors easier.
+- Add integration tests selectively: use them to cover critical paths (flows, persistence, compensation policies), not every permutation.
+- Determinism matters: avoid randomness or flaky external dependencies. If a test simulates flakiness, keep it reproducible.
+- Readable > clever: tests are documentation. Future maintainers should be able to understand why a test exists at a glance.
+
 ## License
 
 MIT
