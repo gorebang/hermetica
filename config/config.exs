@@ -10,4 +10,13 @@ config :store, Store.Repo,
   hostname: "localhost",
   pool_size: 10
 
-  import_config "#{config_env()}.exs"
+
+
+
+# Load per-app base configs (NOT env files)
+for file <- Path.wildcard(Path.expand("../apps/*/config/config.exs", __DIR__)) do
+  import_config file
+end
+
+# Umbrella-wide env override (exactly once)
+import_config "#{config_env()}.exs"
